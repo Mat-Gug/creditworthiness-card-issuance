@@ -8,24 +8,21 @@ This project is dedicated to the development of a machine learning model designe
 
 Before running the project, it's considered a best practice to create a virtual environment and install the required dependencies. This helps isolate project-specific dependencies from system-wide Python packages. To achieve this, follow these steps:
 
-1. **Clone the Repository:**
-```
-git clone https://github.com/Mat-Gug/creditworthiness-card-issuance.git
-```
-2. **Navigate to the Project Directory:**
-```
-cd creditworthiness-card-issuance
-```
-3. **Create a Virtual Environment:**
+1. **Create a Virtual Environment:**
 - For Windows:
-  ```
-  python -m venv credit_venv
-  ```
+  - To create a virtual environment with the default Python version:
+    ```
+    python -m venv credit_venv
+    ```
+  - To create a virtual environment with a specific Python version, such as Python 3.11, replace `python` with `py` followed by the desired Python version:
+    ```
+    py -3.11 -m venv credit_venv
+    ```
 - For macOS and Linux:
   ```
   python3 -m venv credit_venv
   ```
-4. **Activate the Virtual Environment:**
+2. **Activate the Virtual Environment:**
 - For Windows (Command Prompt):
   ```
   credit_venv\Scripts\activate
@@ -38,6 +35,14 @@ cd creditworthiness-card-issuance
   ```
   source credit_venv/bin/activate
   ```
+3. **Clone the Repository:**
+```
+git clone https://github.com/Mat-Gug/creditworthiness-card-issuance.git
+```
+4. **Navigate to the Project Directory:**
+```
+cd creditworthiness-card-issuance
+```
 5. **Install Required Dependencies:**
 ```
 pip install -r requirements.txt
