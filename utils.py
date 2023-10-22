@@ -502,7 +502,6 @@ def custom_grid_search(data, model, param_grid, k=5, random_state=None):
     
     return models_df
 
-
 def get_best_configs(models_df):
     """
     Get the best model configurations based on performance.
@@ -518,8 +517,7 @@ def get_best_configs(models_df):
     top_acc_rows = models_df.nlargest(3, 'mean_test_balanced_acc')
     top_recall_rows = models_df.nlargest(3, 'mean_test_f2')
     top_rows = pd.concat([top_acc_rows, top_recall_rows], ignore_index=True)
-    best_configs_df = top_rows[~top_rows.index.duplicated(keep='first')]
-    
+    best_configs_df = top_rows.drop_duplicates()
     return best_configs_df
 
 def get_parameters(data_frame: pd.DataFrame, row_index: int):
