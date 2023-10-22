@@ -16,7 +16,6 @@ from sklearn.metrics import (
     balanced_accuracy_score,
     recall_score,
     precision_score,
-    f1_score,
     fbeta_score
 )
 
@@ -49,7 +48,11 @@ class DataPreprocessor:
             remove_one_hot (bool): 
                 Indicates whether removal of specific one-hot encoded columns is enabled.
             to_remove_indices (list): 
-                Indices of one-hot encoded columns that are removed from the final dataset.
+                Indices of one-hot encoded columns that are removed from the transformed dataset.
+            numeric_indices (list):
+                Indices of numeric columns in the transformed dataset.
+            education_index (int):
+                Index of 'EDUCATION_TYPE' column in the transformed dataset.
         """
         self.preprocessor = None
         self.final_columns = None
@@ -102,8 +105,8 @@ class DataPreprocessor:
         if self.standardize:
             numeric_columns = ['CNT_CHILDREN',
                                'AMT_INCOME_TOTAL',
-                               'DAYS_BIRTH',
-                               'DAYS_EMPLOYED',
+                               'AGE',
+                               'YEARS_EMPLOYED',
                                'CNT_FAM_MEMBERS']
             transformers.append(('standardizer', StandardScaler(), numeric_columns))
             transformed_columns = flag_columns+gender_column+ordinal_column+one_hot_columns+numeric_columns
@@ -123,9 +126,6 @@ class DataPreprocessor:
                 numeric_columns +
                 passthrough_columns
             )
-            self.numeric_indices = [
-                self.final_columns.index(col) for col in numeric_columns
-            ]
         else:
             self.final_columns = (
                 flag_columns +
@@ -134,13 +134,18 @@ class DataPreprocessor:
                 one_hot_columns.tolist() +
                 passthrough_columns
             )
-        to_remove = ['INCOME_TYPE_Commercial associate',
-                     'FAMILY_STATUS_Civil marriage',
-                     'HOUSING_TYPE_Co-op apartment']
-        self.to_remove_indices = [self.final_columns.index(col) for col in to_remove]
+        if self.remove_one_hot:
+            to_remove = ['INCOME_TYPE_Commercial associate',
+                        'FAMILY_STATUS_Civil marriage',
+                        'HOUSING_TYPE_Co-op apartment']
+            self.to_remove_indices = [self.final_columns.index(col) for col in to_remove]
+            for col in to_remove:
+                self.final_columns.remove(col)
         self.education_index = self.final_columns.index(ordinal_column[0])
-        for col in to_remove:
-            self.final_columns.remove(col)
+        if self.standardize:
+            self.numeric_indices = [
+                self.final_columns.index(col) for col in numeric_columns
+            ]
         return self
 
     def transform(self, data_frame: pd.DataFrame):
@@ -166,21 +171,36 @@ class DataPreprocessor:
                                           axis=1)
         return preprocessed_data
     
-    def inverse_transform(self, preprocessed_data):
-        
+    def inverse_transform(self, X):
+        """
+        Inverse transform the preprocessed 'EDUCATION_TYPE' and numeric columns
+        to their original form.
+        This method takes the preprocessed data and reverses the transformations applied during
+        the preprocessing step, including the inverse encoding of the 'EDUCATION_TYPE' column
+        and, if standardization was applied, the inverse standardization of numeric columns.
+        The result is a DataFrame with data in its original, interpretable form.
 
+        Args:
+            X (np.ndarray): 
+                Preprocessed data as a NumPy array.
+
+        Returns:
+            pd.DataFrame:
+                DataFrame containing the inverse-transformed data.
+        """
+        X_df = pd.DataFrame(X, columns=self.final_columns)
         education_ordinal_encoder = self.preprocessor.named_transformers_['ordinal']
-        preprocessed_data[self.education_index] = \
-            education_ordinal_encoder.inverse_transform(preprocessed_data[self.education_index])
+        X_df[X_df.columns[self.education_index]] = \
+            education_ordinal_encoder.inverse_transform(
+                X_df[X_df.columns[self.education_index]].values.reshape(-1,1)
+            ).reshape(-1)
         if self.standardize:
-            numeric_columns = ['CNT_CHILDREN',
-                               'AMT_INCOME_TOTAL',
-                               'DAYS_BIRTH',
-                               'DAYS_EMPLOYED',
-                               'CNT_FAM_MEMBERS']
             standardizer = self.preprocessor.named_transformers_['standardizer']
-            preprocessed_data[self.numeric_indices] = \
-                standardizer.inverse_transform(preprocessed_data[self.numeric_indices])
+            X_df[X_df.columns[self.numeric_indices]] = \
+                standardizer.inverse_transform(
+                    X_df[X_df.columns[self.numeric_indices]]
+                ).round(1)
+        return X_df
 
 def _obs_window_analysis(credit: pd.DataFrame, command: str):
     """
@@ -273,6 +293,23 @@ def get_performance_window(credit: pd.DataFrame, command: str, ratio=0.9):
     # of the value greater than or equal to the threshold:
     performance_window = next((i for i, rate in enumerate(rates) if rate >= threshold), None)
     return performance_window
+
+def convert_days_to_years(data_frame: pd.DataFrame, column_name: str, new_column_name: str):
+    """
+    Convert a column representing days to years in a DataFrame.
+
+    Args:
+        data_frame (pd.DataFrame):
+            The DataFrame containing the data.
+        column_name (str):
+            The name of the column to be converted from days to years.
+        new_column_name (str):
+            The new name to replace the existing column name.
+    """
+    data_frame[column_name] = data_frame[column_name].apply(lambda x: 0 if x>0 else x)
+    data_frame[column_name] = \
+        (abs(data_frame[column_name]) / 365.25).round().astype(int)
+    data_frame.rename(columns={column_name: new_column_name}, inplace=True)
 
 def _plot_confusion_matrix(model, data: tuple, title="Train", subplot=121):
     """
@@ -371,6 +408,8 @@ def train_and_test_lr(data, resampling, model_name, Cs, existing_df=None):
         precision_test = round(precision_score(y_test, y_pred_test), 3)
         recall_train = round(recall_score(y_train, y_pred_train), 3)
         recall_test = round(recall_score(y_test, y_pred_test), 3)
+        f2_train = round(fbeta_score(y_train, y_pred_train, beta=2), 3)
+        f2_test = round(fbeta_score(y_test, y_pred_test, beta=2), 3)
         results.append({
             'model': model_name_,
             'balanced_acc_train': balanced_accuracy_train,
@@ -378,7 +417,9 @@ def train_and_test_lr(data, resampling, model_name, Cs, existing_df=None):
             'precision_train': precision_train,
             'precision_test': precision_test,
             'recall_train': recall_train,
-            'recall_test': recall_test
+            'recall_test': recall_test,
+            'f2_train': f2_train,
+            'f2_test': f2_test
         })
     df = pd.DataFrame(results)
     if existing_df is not None:
@@ -482,7 +523,18 @@ def get_best_configs(models_df):
     return best_configs_df
 
 def get_parameters(data_frame: pd.DataFrame, row_index: int):
+    """
+    Extract parameters from a DataFrame row.
 
+    Args:
+        data_frame (pd.DataFrame):
+            The DataFrame containing the parameter data.
+        row_index (int):
+            The index of the row from which to extract the parameters.
+
+    Returns:
+        dict: A dictionary containing the best parameters.
+    """
     std_test_recall_index = data_frame.columns.get_loc('std_test_f2')
     parameter_cols = data_frame.iloc[:, std_test_recall_index+1:]
     best_params_dict = parameter_cols.iloc[row_index].to_dict()
